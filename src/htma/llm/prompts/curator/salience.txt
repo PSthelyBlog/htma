@@ -1,0 +1,34 @@
+You are evaluating whether content should be stored in long-term memory.
+
+Context of conversation:
+{context}
+
+Content to evaluate:
+{content}
+
+Consider:
+1. Does this contain new information not already known?
+2. Is this likely to be useful in future conversations?
+3. Does this reveal user preferences, facts, or important events?
+4. Would forgetting this degrade future interactions?
+
+Respond with JSON:
+{{
+  "score": 0.0-1.0,
+  "reasoning": "brief explanation",
+  "memory_type": "semantic" | "episodic" | "both",
+  "key_elements": ["list", "of", "important", "items"]
+}}
+
+Guidelines for scoring:
+- 0.0-0.3: Don't store (trivial, ephemeral, already known)
+- 0.3-0.6: Store minimal (somewhat useful context)
+- 0.6-0.8: Store standard (important facts or preferences)
+- 0.8-1.0: Store rich (critical information, major events)
+
+Guidelines for memory_type:
+- "semantic": For facts, preferences, knowledge about entities
+- "episodic": For events, experiences, conversations
+- "both": For content that contains both factual knowledge and experiential context
+
+Provide ONLY the JSON response, no additional text.

@@ -187,6 +187,24 @@ class Interaction(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class SalienceResult(BaseModel):
+    """Result of salience evaluation for an interaction.
+
+    Attributes:
+        score: Salience score from 0.0 (not worth remembering) to 1.0 (very important).
+        reasoning: Explanation of why this score was assigned.
+        memory_type: Type of memory to store: "semantic", "episodic", or "both".
+        key_elements: List of important elements extracted from the content.
+    """
+
+    score: float = Field(ge=0.0, le=1.0, description="Importance score 0.0-1.0")
+    reasoning: str = Field(description="Explanation for the score")
+    memory_type: str = Field(description="semantic, episodic, or both")
+    key_elements: list[str] = Field(
+        default_factory=list, description="Important items from content"
+    )
+
+
 class StorageResult(BaseModel):
     """Result of storing an interaction in memory.
 

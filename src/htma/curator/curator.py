@@ -9,19 +9,25 @@ This module implements the memory curator (LLM2), which handles:
 Note: This is a basic stub for Phase 2. Full implementation in Phase 3 (Issues #10-14).
 """
 
+import json
 import logging
+from pathlib import Path
 from typing import Any
 
+from htma.core.exceptions import LLMResponseError
 from htma.core.types import (
     Entity,
     Episode,
     Fact,
     Interaction,
-    MemoryNote,
+    SalienceResult,
 )
 from htma.llm.client import OllamaClient
 
 logger = logging.getLogger(__name__)
+
+# Path to prompt templates
+PROMPTS_DIR = Path(__file__).parent.parent / "llm" / "prompts" / "curator"
 
 
 class MemoryCurator:
@@ -51,45 +57,136 @@ class MemoryCurator:
         self.model = model
         logger.info(f"Initialized MemoryCurator with model {model}")
 
-    async def evaluate_salience(
-        self, interaction: Interaction, context: str = ""
-    ) -> MemoryNote:
-        """Evaluate if interaction is worth remembering and create memory note.
-
-        This method determines the importance of an interaction and generates
-        a memory note if it's worth storing.
+    def _load_prompt_template(self, template_name: str) -> str:
+        """Load a prompt template from file.
 
         Args:
-            interaction: The interaction to evaluate.
-            context: Additional context for evaluation.
+            template_name: Name of the template file (e.g., "salience.txt")
 
         Returns:
-            MemoryNote with salience score and extracted information.
+            Template content as string
+
+        Raises:
+            FileNotFoundError: If template file doesn't exist
+        """
+        template_path = PROMPTS_DIR / template_name
+        if not template_path.exists():
+            raise FileNotFoundError(f"Prompt template not found: {template_path}")
+        return template_path.read_text()
+
+    async def evaluate_salience(
+        self, content: str, context: str = ""
+    ) -> SalienceResult:
+        """Evaluate if content is worth remembering.
+
+        This method uses the LLM to determine the importance of content
+        and classify what type of memory (semantic, episodic, or both) it should be.
+
+        Args:
+            content: The content to evaluate (e.g., interaction text).
+            context: Additional context for evaluation (e.g., conversation history).
+
+        Returns:
+            SalienceResult with score, reasoning, memory type, and key elements.
+
+        Raises:
+            LLMResponseError: If LLM fails to return valid JSON or returns invalid data.
 
         Note:
-            This is a stub implementation. Full implementation in Issue #10.
-            Currently returns a basic memory note with moderate salience.
+            Salience thresholds:
+            - 0.0-0.3: Don't store (trivial, ephemeral)
+            - 0.3-0.6: Store minimal (somewhat useful)
+            - 0.6-0.8: Store standard (important facts)
+            - 0.8-1.0: Store rich (critical information)
         """
-        logger.debug("Evaluating salience for interaction (stub implementation)")
+        logger.debug("Evaluating salience for content")
 
-        # Stub: Create a basic memory note
-        # Full implementation will use LLM to evaluate salience
-        content = f"User: {interaction.user_message}\nAssistant: {interaction.assistant_message}"
+        # Handle edge cases
+        if not content or not content.strip():
+            logger.warning("Empty content provided for salience evaluation")
+            return SalienceResult(
+                score=0.0,
+                reasoning="Content is empty",
+                memory_type="episodic",
+                key_elements=[],
+            )
 
-        # Simple heuristic: longer interactions are more salient
-        salience = min(0.5 + len(content) / 2000, 1.0)
+        # Very long content - truncate for evaluation but note it
+        max_length = 4000
+        truncated = False
+        if len(content) > max_length:
+            content = content[:max_length] + "..."
+            truncated = True
+            logger.debug(f"Content truncated to {max_length} characters for evaluation")
 
-        # Extract simple keywords (stub)
-        words = content.lower().split()
-        keywords = list(set(w for w in words if len(w) > 5))[:5]
+        # Load and format prompt
+        try:
+            prompt_template = self._load_prompt_template("salience.txt")
+            prompt = prompt_template.format(context=context, content=content)
+        except Exception as e:
+            logger.error(f"Failed to load/format prompt template: {e}")
+            raise LLMResponseError(f"Failed to load prompt template: {e}") from e
 
-        return MemoryNote(
-            content=content,
-            context=context,
-            keywords=keywords,
-            tags=["interaction"],
-            salience=salience,
-        )
+        # Get LLM evaluation
+        try:
+            response = await self.llm.generate(
+                model=self.model,
+                prompt=prompt,
+                temperature=0.3,  # Lower temperature for more consistent evaluation
+                max_tokens=500,
+            )
+        except Exception as e:
+            logger.error(f"LLM generation failed: {e}")
+            raise LLMResponseError(f"Failed to generate salience evaluation: {e}") from e
+
+        # Parse JSON response
+        try:
+            # Try to extract JSON from response (handle cases where LLM adds extra text)
+            response = response.strip()
+
+            # Find JSON object in response
+            start_idx = response.find("{")
+            end_idx = response.rfind("}") + 1
+
+            if start_idx == -1 or end_idx == 0:
+                raise ValueError("No JSON object found in response")
+
+            json_str = response[start_idx:end_idx]
+            data = json.loads(json_str)
+
+            # Validate required fields
+            if not all(key in data for key in ["score", "reasoning", "memory_type"]):
+                raise ValueError(
+                    "Missing required fields (score, reasoning, memory_type) in response"
+                )
+
+            # Create result
+            result = SalienceResult(
+                score=float(data["score"]),
+                reasoning=data["reasoning"],
+                memory_type=data["memory_type"],
+                key_elements=data.get("key_elements", []),
+            )
+
+            # If content was truncated, adjust score slightly downward
+            if truncated and result.score > 0.3:
+                result.score = max(0.3, result.score - 0.1)
+                result.reasoning += " (Note: Content was truncated for evaluation)"
+
+            logger.info(
+                f"Salience evaluation complete: score={result.score:.2f}, "
+                f"type={result.memory_type}"
+            )
+            return result
+
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            logger.error(f"Failed to parse LLM response as JSON: {e}\nResponse: {response}")
+            raise LLMResponseError(
+                f"LLM returned invalid JSON response: {e}\nResponse: {response[:200]}"
+            ) from e
+        except Exception as e:
+            logger.error(f"Unexpected error parsing salience result: {e}")
+            raise LLMResponseError(f"Failed to parse salience result: {e}") from e
 
     async def extract_entities(
         self, interaction: Interaction
