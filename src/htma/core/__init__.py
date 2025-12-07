@@ -37,8 +37,10 @@ from htma.core.types import (
     EpisodeLink,
     Fact,
     FactID,
+    Interaction,
     MemoryNote,
     RetrievalResult,
+    StorageResult,
     TemporalFilter,
     TemporalRange,
 )
@@ -67,6 +69,8 @@ __all__ = [
     "MemoryNote",
     "TemporalFilter",
     "RetrievalResult",
+    "Interaction",
+    "StorageResult",
     # Exceptions
     "HTMAError",
     "MemoryError",
