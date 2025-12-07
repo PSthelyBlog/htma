@@ -166,3 +166,44 @@ class RetrievalResult(BaseModel):
     relevance_scores: dict[str, float] = Field(
         default_factory=dict, description="ID -> relevance score mapping"
     )
+
+
+# Interaction and Storage
+class Interaction(BaseModel):
+    """Represents a user interaction/conversation turn to be stored.
+
+    Attributes:
+        user_message: The user's message.
+        assistant_message: The assistant's response.
+        occurred_at: When the interaction occurred.
+        context: Additional context about the interaction.
+        metadata: Additional metadata.
+    """
+
+    user_message: str
+    assistant_message: str
+    occurred_at: datetime = Field(default_factory=datetime.utcnow)
+    context: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StorageResult(BaseModel):
+    """Result of storing an interaction in memory.
+
+    Attributes:
+        episode_id: ID of the created episode (if any).
+        entities_created: List of entity IDs created.
+        facts_created: List of fact IDs created.
+        links_created: List of link IDs created.
+        salience_score: Salience score assigned to the interaction.
+        processing_time: Time taken to process and store (in seconds).
+        metadata: Additional metadata about the storage operation.
+    """
+
+    episode_id: EpisodeID | None = None
+    entities_created: list[EntityID] = Field(default_factory=list)
+    facts_created: list[FactID] = Field(default_factory=list)
+    links_created: list[str] = Field(default_factory=list)
+    salience_score: float = Field(default=0.5, ge=0.0, le=1.0)
+    processing_time: float = 0.0
+    metadata: dict[str, Any] = Field(default_factory=dict)
