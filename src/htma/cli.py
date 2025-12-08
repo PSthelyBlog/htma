@@ -28,8 +28,6 @@ from htma.consolidation.engine import ConsolidationEngine
 from htma.consolidation.patterns import PatternDetector
 from htma.core.types import AgentConfig
 from htma.curator.curator import MemoryCurator
-from htma.curator.extractors import EntityExtractor, FactExtractor
-from htma.curator.linkers import LinkGenerator
 from htma.llm.client import OllamaClient
 from htma.memory.episodic import EpisodicMemory
 from htma.memory.interface import MemoryInterface
@@ -109,21 +107,10 @@ async def initialize_system(
     semantic = SemanticMemory(sqlite=sqlite, chroma=chroma)
     episodic = EpisodicMemory(sqlite=sqlite, chroma=chroma)
 
-    # Initialize extractors
-    entity_extractor = EntityExtractor(llm=llm, model=curator_model)
-    fact_extractor = FactExtractor(llm=llm, model=curator_model)
-    link_generator = LinkGenerator(llm=llm, model=curator_model, episodic=episodic)
+    # Initialize curator
+    curator = MemoryCurator(llm=llm, model=curator_model)
 
-    # Initialize curator WITH extractors injected
-    curator = MemoryCurator(
-        llm=llm,
-        model=curator_model,
-        entity_extractor=entity_extractor,
-        fact_extractor=fact_extractor,
-        link_generator=link_generator,
-    )
-
-    # Initialize memory interface (4 parameters only)
+    # Initialize memory interface
     memory_interface = MemoryInterface(
         working=working,
         semantic=semantic,

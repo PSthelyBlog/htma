@@ -34,8 +34,6 @@ from htma.consolidation.engine import ConsolidationEngine
 from htma.consolidation.patterns import PatternDetector
 from htma.core.types import AgentConfig
 from htma.curator.curator import MemoryCurator
-from htma.curator.extractors import EntityExtractor, FactExtractor
-from htma.curator.linkers import LinkGenerator
 from htma.llm.client import OllamaClient
 from htma.memory.episodic import EpisodicMemory
 from htma.memory.interface import MemoryInterface
@@ -111,23 +109,10 @@ class HTMADemo:
             semantic = SemanticMemory(sqlite=sqlite, chroma=chroma)
             episodic = EpisodicMemory(sqlite=sqlite, chroma=chroma)
 
-            # Initialize extractors
-            entity_extractor = EntityExtractor(llm=self.llm, model=DEFAULT_CURATOR_MODEL)
-            fact_extractor = FactExtractor(llm=self.llm, model=DEFAULT_CURATOR_MODEL)
-            link_generator = LinkGenerator(
-                llm=self.llm, model=DEFAULT_CURATOR_MODEL, episodic=episodic
-            )
+            # Initialize curator
+            curator = MemoryCurator(llm=self.llm, model=DEFAULT_CURATOR_MODEL)
 
-            # Initialize curator WITH extractors injected
-            curator = MemoryCurator(
-                llm=self.llm,
-                model=DEFAULT_CURATOR_MODEL,
-                entity_extractor=entity_extractor,
-                fact_extractor=fact_extractor,
-                link_generator=link_generator,
-            )
-
-            # Initialize memory interface (4 parameters only)
+            # Initialize memory interface
             self.memory = MemoryInterface(
                 working=working,
                 semantic=semantic,
