@@ -14,14 +14,17 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from htma.core.exceptions import LLMResponseError
+from htma.core.exceptions import ConflictResolutionError, LLMResponseError
 from htma.core.types import (
+    ConflictResolution,
     Entity,
     Episode,
     Fact,
+    FactConflict,
     Interaction,
     SalienceResult,
 )
+from htma.core.utils import utc_now
 from htma.llm.client import OllamaClient
 
 logger = logging.getLogger(__name__)
@@ -250,30 +253,235 @@ class MemoryCurator:
         # Full implementation will use LLM to evaluate connections
         return []
 
-    async def resolve_conflicts(
-        self, new_facts: list[Fact], existing_facts: list[Fact]
-    ) -> dict[str, Any]:
-        """Resolve conflicts between new and existing facts.
+    async def detect_conflicts(
+        self, new_fact: Fact, semantic_memory: Any
+    ) -> list[FactConflict]:
+        """Find existing facts that conflict with a new fact.
+
+        A conflict occurs when:
+        1. Same subject and predicate but different object/value
+        2. Both facts are currently valid (not invalidated)
+        3. Facts have overlapping event time validity
 
         Args:
-            new_facts: New facts to check for conflicts.
-            existing_facts: Existing facts to check against.
+            new_fact: New fact to check for conflicts.
+            semantic_memory: SemanticMemory instance to query existing facts.
 
         Returns:
-            Dictionary with resolution actions (invalidations, updates, etc.).
+            List of FactConflict objects representing detected conflicts.
 
-        Note:
-            This is a stub implementation. Full implementation in Issue #13.
-            Currently returns an empty resolution.
+        Raises:
+            DatabaseError: If querying semantic memory fails.
         """
-        logger.debug("Resolving conflicts (stub implementation)")
-        # Stub: Return empty resolution
-        # Full implementation will use LLM to resolve conflicts
-        return {
-            "invalidations": [],
-            "confidence_updates": [],
-            "new_facts": new_facts,
-        }
+        logger.debug(
+            f"Detecting conflicts for fact: {new_fact.subject_id} "
+            f"{new_fact.predicate} {new_fact.object_id or new_fact.object_value}"
+        )
+
+        conflicts = []
+
+        try:
+            # Query existing facts with same subject and predicate
+            existing_facts = await semantic_memory.query_entity_facts(
+                entity_id=new_fact.subject_id, predicate=new_fact.predicate
+            )
+
+            # Check each existing fact for conflicts
+            for existing_fact in existing_facts:
+                # Skip if already invalidated
+                if existing_fact.temporal.transaction_time.valid_to is not None:
+                    continue
+
+                # Check if objects/values differ (potential conflict)
+                objects_differ = False
+                if new_fact.object_id and existing_fact.object_id:
+                    objects_differ = new_fact.object_id != existing_fact.object_id
+                elif new_fact.object_value and existing_fact.object_value:
+                    objects_differ = new_fact.object_value != existing_fact.object_value
+                elif (new_fact.object_id and existing_fact.object_value) or (
+                    new_fact.object_value and existing_fact.object_id
+                ):
+                    objects_differ = True
+
+                if objects_differ:
+                    # This is a potential conflict
+                    conflict = FactConflict(
+                        new_fact=new_fact,
+                        conflicting_facts=[existing_fact],
+                        conflict_type="contradiction",
+                    )
+                    conflicts.append(conflict)
+                    logger.info(
+                        f"Detected conflict: {new_fact.id} conflicts with {existing_fact.id}"
+                    )
+
+            if not conflicts:
+                logger.debug("No conflicts detected")
+
+        except Exception as e:
+            logger.error(f"Error detecting conflicts: {e}")
+            raise
+
+        return conflicts
+
+    async def resolve_conflict(
+        self, new_fact: Fact, existing_facts: list[Fact]
+    ) -> ConflictResolution:
+        """Resolve contradiction between new and existing facts.
+
+        Uses the LLM to evaluate the conflict and determine the best resolution
+        strategy based on confidence, temporal context, and the nature of the facts.
+
+        Strategies:
+        1. temporal_succession: Old fact was true, now new fact is true
+        2. confidence_adjustment: Uncertain which is correct, lower confidence
+        3. coexistence: Both can be true in different contexts
+        4. rejection: New fact is likely wrong
+
+        Args:
+            new_fact: The new fact being added.
+            existing_facts: Existing facts that conflict with the new fact.
+
+        Returns:
+            ConflictResolution with strategy and actions to take.
+
+        Raises:
+            LLMResponseError: If LLM fails to return valid response.
+            ConflictResolutionError: If resolution fails.
+        """
+        logger.debug(
+            f"Resolving conflict for new fact {new_fact.id} "
+            f"against {len(existing_facts)} existing facts"
+        )
+
+        # Load and format prompt
+        try:
+            prompt_template = self._load_prompt_template("conflict_resolution.txt")
+
+            # Format existing facts for prompt
+            existing_facts_str = ""
+            for i, fact in enumerate(existing_facts, 1):
+                existing_facts_str += f"\nFact {i} (ID: {fact.id}):\n"
+                existing_facts_str += f"  Subject: {fact.subject_id}\n"
+                existing_facts_str += f"  Predicate: {fact.predicate}\n"
+                existing_facts_str += (
+                    f"  Object: {fact.object_id or fact.object_value}\n"
+                )
+                existing_facts_str += f"  Confidence: {fact.confidence}\n"
+                existing_facts_str += f"  Recorded: {fact.temporal.transaction_time.valid_from}\n"
+                if fact.source_episode_id:
+                    existing_facts_str += f"  Source: {fact.source_episode_id}\n"
+
+            prompt = prompt_template.format(
+                new_subject=new_fact.subject_id,
+                new_predicate=new_fact.predicate,
+                new_object=new_fact.object_id or new_fact.object_value,
+                new_confidence=new_fact.confidence,
+                new_source=new_fact.source_episode_id or "unknown",
+                existing_facts=existing_facts_str,
+            )
+        except Exception as e:
+            logger.error(f"Failed to load/format conflict resolution prompt: {e}")
+            raise LLMResponseError(
+                f"Failed to load conflict resolution prompt: {e}"
+            ) from e
+
+        # Get LLM evaluation
+        try:
+            response = await self.llm.generate(
+                model=self.model,
+                prompt=prompt,
+                temperature=0.2,  # Lower temperature for consistent decision-making
+                max_tokens=1000,
+            )
+        except Exception as e:
+            logger.error(f"LLM generation failed during conflict resolution: {e}")
+            raise LLMResponseError(
+                f"Failed to generate conflict resolution: {e}"
+            ) from e
+
+        # Parse JSON response
+        try:
+            # Extract JSON from response
+            response = response.strip()
+            start_idx = response.find("{")
+            end_idx = response.rfind("}") + 1
+
+            if start_idx == -1 or end_idx == 0:
+                raise ValueError("No JSON object found in response")
+
+            json_str = response[start_idx:end_idx]
+            data = json.loads(json_str)
+
+            # Validate required fields
+            required_fields = ["strategy", "reasoning", "new_fact_accepted"]
+            if not all(key in data for key in required_fields):
+                raise ValueError(f"Missing required fields in response: {required_fields}")
+
+            # Validate strategy
+            valid_strategies = [
+                "temporal_succession",
+                "confidence_adjustment",
+                "coexistence",
+                "rejection",
+            ]
+            strategy = data["strategy"]
+            if strategy not in valid_strategies:
+                raise ValueError(
+                    f"Invalid strategy '{strategy}'. Must be one of {valid_strategies}"
+                )
+
+            # Build resolution result
+            invalidations = []
+            confidence_updates = []
+            result_fact = new_fact if data["new_fact_accepted"] else None
+
+            # Process invalidations
+            if "invalidate_facts" in data and data["invalidate_facts"]:
+                now = utc_now()
+                for fact_id in data["invalidate_facts"]:
+                    invalidations.append((fact_id, now))
+
+            # Process confidence updates
+            if "confidence_updates" in data and data["confidence_updates"]:
+                for fact_id, new_confidence in data["confidence_updates"].items():
+                    confidence_updates.append((fact_id, float(new_confidence)))
+
+            # Apply modifications to new fact if specified
+            if result_fact and "new_fact_modifications" in data:
+                mods = data["new_fact_modifications"]
+                if "confidence" in mods:
+                    result_fact.confidence = float(mods["confidence"])
+                if "metadata" in mods and isinstance(mods["metadata"], dict):
+                    result_fact.metadata.update(mods["metadata"])
+
+            resolution = ConflictResolution(
+                strategy=strategy,
+                invalidations=invalidations,
+                confidence_updates=confidence_updates,
+                new_fact=result_fact,
+                reasoning=data["reasoning"],
+                metadata={"llm_response": data},
+            )
+
+            logger.info(
+                f"Conflict resolved with strategy '{strategy}': {data['reasoning'][:100]}"
+            )
+            return resolution
+
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            logger.error(
+                f"Failed to parse conflict resolution response: {e}\nResponse: {response}"
+            )
+            raise LLMResponseError(
+                f"LLM returned invalid conflict resolution response: {e}\n"
+                f"Response: {response[:200]}"
+            ) from e
+        except Exception as e:
+            logger.error(f"Unexpected error during conflict resolution: {e}")
+            raise ConflictResolutionError(
+                new_fact.id, [f.id for f in existing_facts]
+            ) from e
 
     async def trigger_evolution(
         self, new_episode: Episode, related_episodes: list[Episode]

@@ -1,0 +1,60 @@
+You are resolving a conflict between a new fact and existing facts in a knowledge graph.
+
+New Fact:
+Subject: {new_subject}
+Predicate: {new_predicate}
+Object: {new_object}
+Confidence: {new_confidence}
+Source: {new_source}
+
+Existing Conflicting Facts:
+{existing_facts}
+
+Your task is to determine the best resolution strategy.
+
+Resolution Strategies:
+1. temporal_succession - The old fact was true in the past, now the new fact is true.
+   Use when: Information has legitimately changed over time (e.g., "lives in" changed locations).
+   Action: Invalidate old fact(s) with current timestamp, add new fact with valid_from = now.
+
+2. confidence_adjustment - Uncertain which fact is correct.
+   Use when: Both facts could be true but you're unsure, or facts come from uncertain sources.
+   Action: Lower confidence on less certain fact(s), keep both unless confidence drops below 0.3.
+
+3. coexistence - Both facts can be true in different contexts.
+   Use when: Facts apply in different contexts or interpretations (e.g., nicknames vs formal names).
+   Action: Add context metadata to distinguish, keep both facts valid.
+
+4. rejection - The new fact appears to be wrong.
+   Use when: New fact contradicts well-established, high-confidence facts, or seems implausible.
+   Action: Don't add the new fact, log for review.
+
+Consider:
+- Confidence levels of facts (higher confidence facts are more trustworthy)
+- Sources of facts (some sources may be more reliable)
+- Temporal context (has enough time passed for change?)
+- Nature of the predicate (some properties change, others don't)
+
+Respond with JSON:
+{{
+  "strategy": "temporal_succession" | "confidence_adjustment" | "coexistence" | "rejection",
+  "reasoning": "detailed explanation of why this strategy was chosen",
+  "invalidate_facts": ["fact_id1", "fact_id2"],  // IDs of facts to invalidate
+  "confidence_updates": {{  // Facts to update with new confidence scores
+    "fact_id": 0.5
+  }},
+  "new_fact_accepted": true | false,  // Whether to add the new fact
+  "new_fact_modifications": {{  // Optional modifications to new fact
+    "confidence": 0.8,
+    "valid_from": "2024-01-01T00:00:00Z",
+    "metadata": {{"context": "additional context"}}
+  }}
+}}
+
+Guidelines:
+- temporal_succession: Most common for facts that can change (location, job, status)
+- confidence_adjustment: When unsure, prefer keeping both facts with adjusted confidence
+- coexistence: Use sparingly, only when truly different contexts
+- rejection: Use rarely, prefer confidence_adjustment when uncertain
+
+Provide ONLY the JSON response, no additional text.

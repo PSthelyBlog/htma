@@ -311,3 +311,62 @@ class LinkEvaluation(BaseModel):
     )
     reasoning: str = Field(description="Explanation of the link assessment")
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# Conflict Resolution Types
+class FactConflict(BaseModel):
+    """Represents a conflict between a new fact and existing facts.
+
+    Attributes:
+        new_fact: The new fact being added.
+        conflicting_facts: List of existing facts that conflict with the new fact.
+        conflict_type: Type of conflict (e.g., "contradiction", "update", "refinement").
+        detected_at: When the conflict was detected.
+    """
+
+    new_fact: Fact = Field(description="The new fact being added")
+    conflicting_facts: list[Fact] = Field(
+        description="Existing facts that conflict with new fact"
+    )
+    conflict_type: str = Field(
+        default="contradiction", description="Type of conflict detected"
+    )
+    detected_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ConflictResolution(BaseModel):
+    """Result of resolving a conflict between facts.
+
+    Represents the strategy chosen to resolve a conflict and the actions to take.
+
+    Resolution strategies:
+    1. temporal_succession: Old fact was true, now new fact is true
+    2. confidence_adjustment: Uncertain which is correct, lower confidence
+    3. coexistence: Both can be true in different contexts
+    4. rejection: New fact appears to be wrong
+
+    Attributes:
+        strategy: Which resolution strategy to apply.
+        invalidations: List of (fact_id, invalidation_timestamp) to invalidate.
+        confidence_updates: List of (fact_id, new_confidence) to update.
+        new_fact: The new fact to add (may be modified from original).
+        reasoning: Explanation of why this resolution was chosen.
+        metadata: Additional metadata about the resolution.
+    """
+
+    strategy: str = Field(
+        description="Resolution strategy: temporal_succession, confidence_adjustment, "
+        "coexistence, or rejection"
+    )
+    invalidations: list[tuple[FactID, datetime]] = Field(
+        default_factory=list,
+        description="Facts to invalidate with their invalidation timestamps",
+    )
+    confidence_updates: list[tuple[FactID, float]] = Field(
+        default_factory=list, description="Facts to update with new confidence scores"
+    )
+    new_fact: Fact | None = Field(
+        default=None, description="New fact to add (None if rejected)"
+    )
+    reasoning: str = Field(description="Explanation of the resolution decision")
+    metadata: dict[str, Any] = Field(default_factory=dict)
