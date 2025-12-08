@@ -519,3 +519,75 @@ class LinkMaintenanceReport(BaseModel):
         default=0.0, ge=0.0, description="Processing time in seconds"
     )
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PruneReport(BaseModel):
+    """Result of pruning stale memories during consolidation.
+
+    Contains statistics about episodes and links removed from memory.
+
+    Attributes:
+        episodes_pruned: Number of episodes removed.
+        links_pruned: Number of links removed due to episode pruning.
+        total_episodes_before: Total episodes before pruning.
+        total_episodes_after: Total episodes after pruning.
+        processing_time: Time taken for pruning operations (in seconds).
+        metadata: Additional metadata about the pruning cycle.
+    """
+
+    episodes_pruned: int = Field(default=0, ge=0, description="Episodes removed")
+    links_pruned: int = Field(
+        default=0, ge=0, description="Links removed due to episode pruning"
+    )
+    total_episodes_before: int = Field(
+        default=0, ge=0, description="Total episodes before pruning"
+    )
+    total_episodes_after: int = Field(
+        default=0, ge=0, description="Total episodes after pruning"
+    )
+    processing_time: float = Field(
+        default=0.0, ge=0.0, description="Processing time in seconds"
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConsolidationReport(BaseModel):
+    """Result of a full consolidation cycle.
+
+    Contains comprehensive statistics about all consolidation operations
+    including abstraction generation, pattern detection, conflict resolution,
+    link maintenance, and memory pruning.
+
+    Attributes:
+        abstractions_created: Number of higher-level abstractions generated.
+        patterns_detected: Number of new patterns discovered.
+        patterns_strengthened: Number of existing patterns with new evidence.
+        conflicts_resolved: Number of fact conflicts resolved.
+        links_strengthened: Number of links strengthened via co-access.
+        links_pruned: Number of weak links removed.
+        episodes_pruned: Number of stale episodes removed.
+        duration: Time taken for the full consolidation cycle.
+        metadata: Additional metadata about the consolidation process.
+    """
+
+    abstractions_created: int = Field(
+        default=0, ge=0, description="Higher-level abstractions generated"
+    )
+    patterns_detected: int = Field(
+        default=0, ge=0, description="New patterns discovered"
+    )
+    patterns_strengthened: int = Field(
+        default=0, ge=0, description="Existing patterns with new evidence"
+    )
+    conflicts_resolved: int = Field(
+        default=0, ge=0, description="Fact conflicts resolved"
+    )
+    links_strengthened: int = Field(
+        default=0, ge=0, description="Links strengthened via co-access"
+    )
+    links_pruned: int = Field(default=0, ge=0, description="Weak links removed")
+    episodes_pruned: int = Field(default=0, ge=0, description="Stale episodes removed")
+    duration: float = Field(
+        default=0.0, ge=0.0, description="Total consolidation time in seconds"
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
