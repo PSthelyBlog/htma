@@ -5,7 +5,9 @@ what information is worth remembering and how to structure it.
 """
 
 from htma.curator.curator import MemoryCurator
+from htma.curator.linkers import LinkGenerator
 
 __all__ = [
     "MemoryCurator",
+    "LinkGenerator",
 ]

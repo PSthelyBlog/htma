@@ -1,0 +1,44 @@
+You are evaluating whether two memory episodes should be linked together.
+
+Episode A (ID: {episode_a_id}):
+Occurred: {episode_a_occurred}
+Content: {episode_a_content}
+Summary: {episode_a_summary}
+Keywords: {episode_a_keywords}
+Tags: {episode_a_tags}
+
+Episode B (ID: {episode_b_id}):
+Occurred: {episode_b_occurred}
+Content: {episode_b_content}
+Summary: {episode_b_summary}
+Keywords: {episode_b_keywords}
+Tags: {episode_b_tags}
+
+Consider:
+1. Do these episodes share similar topics, concepts, or themes?
+2. Are they close in time or part of a temporal sequence?
+3. Does one episode lead to or cause the other?
+4. Do they exhibit similar patterns or structures?
+
+Respond with JSON:
+{{
+  "should_link": true | false,
+  "link_type": "semantic" | "temporal" | "causal" | "analogical",
+  "weight": 0.0-1.0,
+  "reasoning": "brief explanation of the connection or lack thereof"
+}}
+
+Link type guidelines:
+- "semantic": Similar topics/concepts (e.g., both about Python programming)
+- "temporal": Close in time or part of a sequence (e.g., "before the meeting" and "after the meeting")
+- "causal": One led to or caused another (e.g., "user asked about X" and "user learned X")
+- "analogical": Similar patterns/structures (e.g., both describe debugging processes)
+
+Weight guidelines:
+- 0.0-0.3: Weak connection (tangentially related)
+- 0.3-0.6: Moderate connection (clearly related but not central)
+- 0.6-0.8: Strong connection (closely related)
+- 0.8-1.0: Very strong connection (tightly coupled, one references the other)
+
+Only set should_link to true if there is a meaningful connection worth maintaining.
+Provide ONLY the JSON response, no additional text.
