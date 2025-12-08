@@ -370,3 +370,39 @@ class ConflictResolution(BaseModel):
     )
     reasoning: str = Field(description="Explanation of the resolution decision")
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# Memory Evolution Types
+class EpisodeUpdate(BaseModel):
+    """Represents an update to an existing episode triggered by new information.
+
+    When a new episode is added, it may provide context for or change the significance
+    of existing episodes. This model captures those updates (A-MEM style evolution).
+
+    Evolution types:
+    - context_enrichment: New info explains or contextualizes old
+    - significance_change: New events change importance of old
+    - pattern_recognition: New episode confirms pattern from old
+    - contradiction: New episode contradicts old (may trigger resolution)
+
+    Attributes:
+        episode_id: ID of the episode to update.
+        evolution_type: Type of evolution (context_enrichment, significance_change, etc.).
+        updates: Dictionary of fields to update with their new values.
+        reasoning: Explanation of why this update is needed.
+        triggered_by: ID of the new episode that triggered this update.
+        metadata: Additional metadata about the evolution.
+    """
+
+    episode_id: EpisodeID = Field(description="ID of episode to update")
+    evolution_type: str = Field(
+        description="Evolution type: context_enrichment, significance_change, "
+        "pattern_recognition, or contradiction"
+    )
+    updates: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Fields to update (e.g., {'salience': 0.8, 'keywords': ['new', 'words']})",
+    )
+    reasoning: str = Field(description="Explanation for the update")
+    triggered_by: EpisodeID = Field(description="ID of episode that triggered update")
+    metadata: dict[str, Any] = Field(default_factory=dict)
