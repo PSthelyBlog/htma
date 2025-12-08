@@ -1,12 +1,21 @@
 """Unit tests for MemoryCurator."""
 
 import json
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from htma.core.exceptions import LLMResponseError
-from htma.core.types import SalienceResult
+from htma.core.exceptions import ConflictResolutionError, LLMResponseError
+from htma.core.types import (
+    BiTemporalRecord,
+    ConflictResolution,
+    Fact,
+    FactConflict,
+    SalienceResult,
+    TemporalRange,
+)
+from htma.core.utils import generate_entity_id, generate_fact_id
 from htma.curator.curator import MemoryCurator
 from htma.llm.client import OllamaClient
 
@@ -323,3 +332,452 @@ class TestEvaluateSalience:
 
         with pytest.raises(LLMResponseError):
             await curator.evaluate_salience(content="Test content")
+
+
+class TestDetectConflicts:
+    """Tests for conflict detection."""
+
+    @pytest.mark.asyncio
+    async def test_detect_conflicts_no_conflicts(self):
+        """Test conflict detection when there are no conflicts."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        # Create a new fact
+        subject_id = generate_entity_id()
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="lives_in",
+            object_value="New York",
+            confidence=0.9,
+        )
+
+        # Mock semantic memory with no existing facts
+        semantic_memory = MagicMock()
+        semantic_memory.query_entity_facts = AsyncMock(return_value=[])
+
+        conflicts = await curator.detect_conflicts(new_fact, semantic_memory)
+
+        assert len(conflicts) == 0
+        semantic_memory.query_entity_facts.assert_called_once_with(
+            entity_id=subject_id, predicate="lives_in"
+        )
+
+    @pytest.mark.asyncio
+    async def test_detect_conflicts_same_value_no_conflict(self):
+        """Test that same fact value doesn't create conflict."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        subject_id = generate_entity_id()
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="lives_in",
+            object_value="New York",
+        )
+
+        # Existing fact with same value
+        existing_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="lives_in",
+            object_value="New York",
+        )
+
+        semantic_memory = MagicMock()
+        semantic_memory.query_entity_facts = AsyncMock(return_value=[existing_fact])
+
+        conflicts = await curator.detect_conflicts(new_fact, semantic_memory)
+
+        assert len(conflicts) == 0  # Same value, no conflict
+
+    @pytest.mark.asyncio
+    async def test_detect_conflicts_different_value_creates_conflict(self):
+        """Test that different values create a conflict."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        subject_id = generate_entity_id()
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="lives_in",
+            object_value="Boston",
+        )
+
+        # Existing fact with different value
+        existing_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="lives_in",
+            object_value="New York",
+        )
+
+        semantic_memory = MagicMock()
+        semantic_memory.query_entity_facts = AsyncMock(return_value=[existing_fact])
+
+        conflicts = await curator.detect_conflicts(new_fact, semantic_memory)
+
+        assert len(conflicts) == 1
+        assert isinstance(conflicts[0], FactConflict)
+        assert conflicts[0].new_fact == new_fact
+        assert existing_fact in conflicts[0].conflicting_facts
+
+    @pytest.mark.asyncio
+    async def test_detect_conflicts_ignores_invalidated_facts(self):
+        """Test that invalidated facts don't create conflicts."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        subject_id = generate_entity_id()
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="lives_in",
+            object_value="Boston",
+        )
+
+        # Existing fact that's been invalidated
+        invalidated_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="lives_in",
+            object_value="New York",
+            temporal=BiTemporalRecord(
+                transaction_time=TemporalRange(
+                    valid_from=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    valid_to=datetime(2024, 6, 1, tzinfo=timezone.utc),  # Invalidated
+                )
+            ),
+        )
+
+        semantic_memory = MagicMock()
+        semantic_memory.query_entity_facts = AsyncMock(return_value=[invalidated_fact])
+
+        conflicts = await curator.detect_conflicts(new_fact, semantic_memory)
+
+        assert len(conflicts) == 0  # Invalidated fact shouldn't conflict
+
+    @pytest.mark.asyncio
+    async def test_detect_conflicts_object_id_vs_value(self):
+        """Test conflict detection with object_id vs object_value."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        subject_id = generate_entity_id()
+        city_id = generate_entity_id()
+
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="lives_in",
+            object_id=city_id,  # Using entity ID
+        )
+
+        existing_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="lives_in",
+            object_value="New York",  # Using string value
+        )
+
+        semantic_memory = MagicMock()
+        semantic_memory.query_entity_facts = AsyncMock(return_value=[existing_fact])
+
+        conflicts = await curator.detect_conflicts(new_fact, semantic_memory)
+
+        assert len(conflicts) == 1  # Different representation types should conflict
+
+
+class TestResolveConflict:
+    """Tests for conflict resolution."""
+
+    @pytest.mark.asyncio
+    async def test_resolve_conflict_temporal_succession(self):
+        """Test temporal succession resolution strategy."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        subject_id = generate_entity_id()
+        old_fact_id = generate_fact_id()
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="lives_in",
+            object_value="Boston",
+            confidence=0.9,
+        )
+
+        old_fact = Fact(
+            id=old_fact_id,
+            subject_id=subject_id,
+            predicate="lives_in",
+            object_value="New York",
+            confidence=0.9,
+        )
+
+        # Mock LLM response for temporal succession
+        llm_response = json.dumps({
+            "strategy": "temporal_succession",
+            "reasoning": "User has moved from New York to Boston",
+            "invalidate_facts": [old_fact_id],
+            "confidence_updates": {},
+            "new_fact_accepted": True,
+            "new_fact_modifications": {},
+        })
+        llm.generate = AsyncMock(return_value=llm_response)
+
+        resolution = await curator.resolve_conflict(new_fact, [old_fact])
+
+        assert isinstance(resolution, ConflictResolution)
+        assert resolution.strategy == "temporal_succession"
+        assert len(resolution.invalidations) == 1
+        assert resolution.invalidations[0][0] == old_fact_id
+        assert resolution.new_fact == new_fact
+        assert "moved" in resolution.reasoning.lower()
+
+    @pytest.mark.asyncio
+    async def test_resolve_conflict_confidence_adjustment(self):
+        """Test confidence adjustment resolution strategy."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        subject_id = generate_entity_id()
+        existing_fact_id = generate_fact_id()
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="favorite_color",
+            object_value="blue",
+            confidence=0.6,
+        )
+
+        existing_fact = Fact(
+            id=existing_fact_id,
+            subject_id=subject_id,
+            predicate="favorite_color",
+            object_value="red",
+            confidence=0.7,
+        )
+
+        # Mock LLM response for confidence adjustment
+        llm_response = json.dumps({
+            "strategy": "confidence_adjustment",
+            "reasoning": "Uncertain which color preference is current",
+            "invalidate_facts": [],
+            "confidence_updates": {existing_fact_id: 0.5},
+            "new_fact_accepted": True,
+            "new_fact_modifications": {"confidence": 0.5},
+        })
+        llm.generate = AsyncMock(return_value=llm_response)
+
+        resolution = await curator.resolve_conflict(new_fact, [existing_fact])
+
+        assert resolution.strategy == "confidence_adjustment"
+        assert len(resolution.confidence_updates) == 1
+        assert resolution.confidence_updates[0] == (existing_fact_id, 0.5)
+        assert resolution.new_fact.confidence == 0.5  # Modified
+        assert len(resolution.invalidations) == 0  # No invalidations
+
+    @pytest.mark.asyncio
+    async def test_resolve_conflict_coexistence(self):
+        """Test coexistence resolution strategy."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        subject_id = generate_entity_id()
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="name",
+            object_value="Bob",
+        )
+
+        existing_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="name",
+            object_value="Robert",
+        )
+
+        # Mock LLM response for coexistence
+        llm_response = json.dumps({
+            "strategy": "coexistence",
+            "reasoning": "Bob is likely a nickname for Robert, both can coexist",
+            "invalidate_facts": [],
+            "confidence_updates": {},
+            "new_fact_accepted": True,
+            "new_fact_modifications": {
+                "metadata": {"context": "nickname"}
+            },
+        })
+        llm.generate = AsyncMock(return_value=llm_response)
+
+        resolution = await curator.resolve_conflict(new_fact, [existing_fact])
+
+        assert resolution.strategy == "coexistence"
+        assert len(resolution.invalidations) == 0
+        assert len(resolution.confidence_updates) == 0
+        assert resolution.new_fact is not None
+        assert "nickname" in resolution.new_fact.metadata.get("context", "")
+
+    @pytest.mark.asyncio
+    async def test_resolve_conflict_rejection(self):
+        """Test rejection resolution strategy."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        subject_id = generate_entity_id()
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="birth_year",
+            object_value="2025",  # Implausible
+            confidence=0.5,
+        )
+
+        existing_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=subject_id,
+            predicate="birth_year",
+            object_value="1990",
+            confidence=0.95,
+        )
+
+        # Mock LLM response for rejection
+        llm_response = json.dumps({
+            "strategy": "rejection",
+            "reasoning": "New birth year is implausible and conflicts with high-confidence fact",
+            "invalidate_facts": [],
+            "confidence_updates": {},
+            "new_fact_accepted": False,
+        })
+        llm.generate = AsyncMock(return_value=llm_response)
+
+        resolution = await curator.resolve_conflict(new_fact, [existing_fact])
+
+        assert resolution.strategy == "rejection"
+        assert resolution.new_fact is None  # Rejected
+        assert len(resolution.invalidations) == 0
+        assert len(resolution.confidence_updates) == 0
+
+    @pytest.mark.asyncio
+    async def test_resolve_conflict_invalid_strategy(self):
+        """Test error handling for invalid strategy."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=generate_entity_id(),
+            predicate="test",
+            object_value="value",
+        )
+
+        existing_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=new_fact.subject_id,
+            predicate="test",
+            object_value="other",
+        )
+
+        # Invalid strategy in response
+        llm_response = json.dumps({
+            "strategy": "invalid_strategy",
+            "reasoning": "Test",
+            "new_fact_accepted": True,
+        })
+        llm.generate = AsyncMock(return_value=llm_response)
+
+        with pytest.raises(LLMResponseError) as exc_info:
+            await curator.resolve_conflict(new_fact, [existing_fact])
+
+        assert "Invalid strategy" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_resolve_conflict_missing_required_fields(self):
+        """Test error handling for missing required fields in response."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=generate_entity_id(),
+            predicate="test",
+            object_value="value",
+        )
+
+        existing_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=new_fact.subject_id,
+            predicate="test",
+            object_value="other",
+        )
+
+        # Missing required field 'reasoning'
+        llm_response = json.dumps({
+            "strategy": "rejection",
+            "new_fact_accepted": False,
+        })
+        llm.generate = AsyncMock(return_value=llm_response)
+
+        with pytest.raises(LLMResponseError) as exc_info:
+            await curator.resolve_conflict(new_fact, [existing_fact])
+
+        assert "Missing required fields" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_resolve_conflict_invalid_json(self):
+        """Test error handling for invalid JSON response."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=generate_entity_id(),
+            predicate="test",
+            object_value="value",
+        )
+
+        existing_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=new_fact.subject_id,
+            predicate="test",
+            object_value="other",
+        )
+
+        llm.generate = AsyncMock(return_value="Not valid JSON")
+
+        with pytest.raises(LLMResponseError) as exc_info:
+            await curator.resolve_conflict(new_fact, [existing_fact])
+
+        assert "invalid" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_resolve_conflict_llm_error(self):
+        """Test error handling when LLM generation fails."""
+        llm = MagicMock(spec=OllamaClient)
+        curator = MemoryCurator(llm=llm)
+
+        new_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=generate_entity_id(),
+            predicate="test",
+            object_value="value",
+        )
+
+        existing_fact = Fact(
+            id=generate_fact_id(),
+            subject_id=new_fact.subject_id,
+            predicate="test",
+            object_value="other",
+        )
+
+        llm.generate = AsyncMock(side_effect=Exception("LLM connection failed"))
+
+        with pytest.raises(LLMResponseError) as exc_info:
+            await curator.resolve_conflict(new_fact, [existing_fact])
+
+        assert "Failed to generate conflict resolution" in str(exc_info.value)
