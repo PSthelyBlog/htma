@@ -591,3 +591,71 @@ class ConsolidationReport(BaseModel):
         default=0.0, ge=0.0, description="Total consolidation time in seconds"
     )
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# Agent Types
+class AgentConfig(BaseModel):
+    """Configuration for the HTMA agent.
+
+    Attributes:
+        reasoner_model: Model to use for the reasoning agent (LLM₁).
+        system_context: Static system instructions for the agent.
+        max_retrieved_episodes: Maximum number of episodes to retrieve per query.
+        max_retrieved_facts: Maximum number of facts to retrieve per query.
+        auto_store_interactions: Whether to automatically store interactions in memory.
+        memory_query_threshold: Minimum relevance score for memory retrieval.
+        metadata: Additional configuration metadata.
+    """
+
+    reasoner_model: str = Field(
+        default="llama3:8b", description="Model for reasoning agent (LLM₁)"
+    )
+    system_context: str = Field(
+        default="You are a helpful AI assistant with access to long-term memory. "
+        "Use retrieved memories to provide contextual and personalized responses.",
+        description="Static system instructions",
+    )
+    max_retrieved_episodes: int = Field(
+        default=5, ge=1, description="Max episodes to retrieve per query"
+    )
+    max_retrieved_facts: int = Field(
+        default=10, ge=1, description="Max facts to retrieve per query"
+    )
+    auto_store_interactions: bool = Field(
+        default=True, description="Whether to automatically store interactions"
+    )
+    memory_query_threshold: float = Field(
+        default=0.3, ge=0.0, le=1.0, description="Min relevance for memory retrieval"
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentResponse(BaseModel):
+    """Response from the HTMA agent.
+
+    Contains the assistant's message along with metadata about memory operations
+    and context used to generate the response.
+
+    Attributes:
+        message: The assistant's response text.
+        conversation_id: ID of the conversation this response belongs to.
+        retrieved_context: Summary of retrieved memories used.
+        storage_result: Result of storing the interaction (if auto-store enabled).
+        processing_time: Time taken to process the message (in seconds).
+        metadata: Additional response metadata.
+    """
+
+    message: str = Field(description="Assistant's response text")
+    conversation_id: str | None = Field(
+        default=None, description="Conversation ID if applicable"
+    )
+    retrieved_context: dict[str, Any] = Field(
+        default_factory=dict, description="Summary of retrieved memories"
+    )
+    storage_result: StorageResult | None = Field(
+        default=None, description="Result of storing interaction"
+    )
+    processing_time: float = Field(
+        default=0.0, ge=0.0, description="Processing time in seconds"
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)

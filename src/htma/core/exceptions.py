@@ -197,3 +197,10 @@ class ConfigurationError(HTMAError):
     """Raised when there is a configuration error."""
 
     pass
+
+
+# Agent-related exceptions
+class AgentError(HTMAError):
+    """Base exception for agent-related errors."""
+
+    pass
