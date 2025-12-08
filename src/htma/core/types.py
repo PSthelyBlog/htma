@@ -406,3 +406,83 @@ class EpisodeUpdate(BaseModel):
     reasoning: str = Field(description="Explanation for the update")
     triggered_by: EpisodeID = Field(description="ID of episode that triggered update")
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# Pattern Detection Types
+class Pattern(BaseModel):
+    """Represents a recurring pattern detected across episodes.
+
+    Patterns represent recurring themes, behaviors, or preferences observed
+    across multiple episodes. They strengthen with evidence and evolve over time.
+
+    Pattern types:
+    - behavioral: User tends to do X
+    - preference: User prefers X over Y
+    - procedural: Steps for accomplishing X
+    - error: Common mistake pattern
+
+    Pattern lifecycle:
+    - Emerging: 1-2 occurrences, low confidence
+    - Established: 3+ occurrences, medium confidence
+    - Consolidated: 10+ occurrences, high confidence, becomes principle
+
+    Attributes:
+        id: Unique pattern identifier.
+        description: Human-readable description of the pattern.
+        pattern_type: Type of pattern (behavioral, preference, procedural, error).
+        confidence: Confidence score (0.0-1.0) based on evidence strength.
+        occurrences: List of episode IDs where this pattern was observed.
+        first_seen: When the pattern was first detected.
+        last_seen: When the pattern was most recently observed.
+        consolidation_strength: Resistance to weakening/pruning.
+        metadata: Additional metadata about the pattern.
+    """
+
+    id: str = Field(description="Unique pattern identifier")
+    description: str = Field(description="Human-readable pattern description")
+    pattern_type: str = Field(
+        description="Pattern type: behavioral, preference, procedural, or error"
+    )
+    confidence: float = Field(
+        default=0.5, ge=0.0, le=1.0, description="Confidence based on evidence"
+    )
+    occurrences: list[EpisodeID] = Field(
+        default_factory=list, description="Episode IDs where pattern observed"
+    )
+    first_seen: datetime = Field(
+        default_factory=datetime.utcnow, description="When pattern first detected"
+    )
+    last_seen: datetime = Field(
+        default_factory=datetime.utcnow, description="Most recent observation"
+    )
+    consolidation_strength: float = Field(
+        default=5.0, ge=0.0, description="Resistance to weakening"
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PatternDetectionResult(BaseModel):
+    """Result of pattern detection across episodes.
+
+    Contains newly discovered patterns, existing patterns with new evidence,
+    and patterns that have weakened due to lack of recent observation.
+
+    Attributes:
+        new_patterns: Patterns discovered in this detection cycle.
+        strengthened: Existing patterns with new supporting evidence.
+        weakened: Patterns not observed recently, with reduced confidence.
+        metadata: Additional metadata about the detection process.
+    """
+
+    new_patterns: list[Pattern] = Field(
+        default_factory=list, description="Newly discovered patterns"
+    )
+    strengthened: list[tuple[str, float]] = Field(
+        default_factory=list,
+        description="(pattern_id, new_confidence) for strengthened patterns",
+    )
+    weakened: list[tuple[str, float]] = Field(
+        default_factory=list,
+        description="(pattern_id, new_confidence) for weakened patterns",
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
