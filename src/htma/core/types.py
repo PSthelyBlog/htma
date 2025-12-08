@@ -225,3 +225,64 @@ class StorageResult(BaseModel):
     salience_score: float = Field(default=0.5, ge=0.0, le=1.0)
     processing_time: float = 0.0
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# Extraction Results (for curator operations)
+class ExtractedEntity(BaseModel):
+    """Result of entity extraction from text.
+
+    Represents an entity identified in text before it's persisted to memory.
+
+    Attributes:
+        name: The entity's name or identifier.
+        entity_type: Type of entity (person, place, organization, concept, object, event, time).
+        mentions: List of text snippets where the entity was mentioned.
+        confidence: Extraction confidence score (0.0-1.0).
+        metadata: Additional metadata about the extraction.
+    """
+
+    name: str = Field(description="Entity name or identifier")
+    entity_type: str = Field(
+        description="Entity type: person, place, organization, concept, object, event, time"
+    )
+    mentions: list[str] = Field(
+        default_factory=list, description="Text snippets where entity appears"
+    )
+    confidence: float = Field(
+        default=1.0, ge=0.0, le=1.0, description="Extraction confidence"
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExtractedFact(BaseModel):
+    """Result of fact extraction from text.
+
+    Represents a relationship or property identified in text before it's persisted.
+
+    Attributes:
+        subject: Subject entity name.
+        predicate: Relationship type or property name.
+        object_entity: Object entity name (for entity-to-entity relationships).
+        object_value: Literal value (for entity-to-value properties).
+        temporal_marker: Any temporal information extracted (e.g., "in 2020", "yesterday").
+        confidence: Extraction confidence score (0.0-1.0).
+        source_text: The text snippet this fact was extracted from.
+        metadata: Additional metadata about the extraction.
+    """
+
+    subject: str = Field(description="Subject entity name")
+    predicate: str = Field(description="Relationship type or property name")
+    object_entity: str | None = Field(
+        default=None, description="Object entity name (for relationships)"
+    )
+    object_value: str | None = Field(
+        default=None, description="Literal value (for properties)"
+    )
+    temporal_marker: str | None = Field(
+        default=None, description="Temporal information if present"
+    )
+    confidence: float = Field(
+        default=1.0, ge=0.0, le=1.0, description="Extraction confidence"
+    )
+    source_text: str = Field(default="", description="Source text snippet")
+    metadata: dict[str, Any] = Field(default_factory=dict)

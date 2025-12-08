@@ -1,0 +1,59 @@
+You are extracting facts and relationships from text to populate a knowledge graph.
+
+Context (if relevant):
+{context}
+
+Text to analyze:
+{text}
+
+Entities identified in the text:
+{entities}
+
+Extract all significant facts and relationships from the text. For each fact, identify:
+1. subject: The subject entity name (must be from the entities list above)
+2. predicate: The relationship type or property name
+3. object_entity: The object entity name (if the fact relates two entities)
+4. object_value: A literal value (if the fact assigns a property value)
+5. temporal_marker: Any temporal information (e.g., "in 2020", "yesterday", "currently")
+6. confidence: How confident you are in this extraction (0.0-1.0)
+7. source_text: The text snippet this fact was extracted from (optional)
+
+Common predicates to use:
+- is_a: Entity type or classification (e.g., "Alice is_a engineer")
+- has_property: Property or attribute (e.g., "book has_property 'red cover'")
+- located_in: Location relationship (e.g., "office located_in 'San Francisco'")
+- works_at: Employment relationship (e.g., "Alice works_at Google")
+- owns: Ownership (e.g., "Bob owns car")
+- prefers: Preference (e.g., "user prefers 'dark mode'")
+- said: Statement attribution (e.g., "Alice said 'hello'")
+- believes: Belief attribution (e.g., "Bob believes 'climate change is real'")
+- happened_at: Event timing (e.g., "meeting happened_at '2023-01-15'")
+- part_of: Membership or containment (e.g., "Alice part_of team")
+- created: Creation relationship (e.g., "Alice created project")
+- knows: Acquaintance (e.g., "Alice knows Bob")
+
+Important rules:
+- Each fact must have either object_entity OR object_value, not both
+- Use object_entity when relating two entities from the entities list
+- Use object_value for literal values (numbers, strings, properties)
+- Only extract facts explicitly stated or strongly implied in the text
+- Extract temporal information when present (dates, times, periods)
+- Use consistent predicate names (prefer the common ones listed above)
+- Don't invent facts not supported by the text
+
+Respond with a JSON array of facts:
+[
+  {{
+    "subject": "entity name",
+    "predicate": "relationship_type",
+    "object_entity": "entity name" or null,
+    "object_value": "literal value" or null,
+    "temporal_marker": "temporal info" or null,
+    "confidence": 0.0-1.0,
+    "source_text": "text snippet"
+  }}
+]
+
+If no facts are found, return an empty array: []
+
+Provide ONLY the JSON response, no additional text.
