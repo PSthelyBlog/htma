@@ -23,7 +23,9 @@ from rich.table import Table
 from rich.text import Text
 
 from htma.agent.agent import HTMAAgent
+from htma.consolidation.abstraction import AbstractionGenerator
 from htma.consolidation.engine import ConsolidationEngine
+from htma.consolidation.patterns import PatternDetector
 from htma.core.types import AgentConfig
 from htma.curator.curator import MemoryCurator
 from htma.curator.extractors import EntityExtractor, FactExtractor
@@ -107,21 +109,26 @@ async def initialize_system(
     semantic = SemanticMemory(sqlite=sqlite, chroma=chroma)
     episodic = EpisodicMemory(sqlite=sqlite, chroma=chroma)
 
-    # Initialize curator
-    curator = MemoryCurator(llm=llm, model=curator_model)
+    # Initialize extractors
     entity_extractor = EntityExtractor(llm=llm, model=curator_model)
     fact_extractor = FactExtractor(llm=llm, model=curator_model)
     link_generator = LinkGenerator(llm=llm, model=curator_model, episodic=episodic)
 
-    # Initialize memory interface
+    # Initialize curator WITH extractors injected
+    curator = MemoryCurator(
+        llm=llm,
+        model=curator_model,
+        entity_extractor=entity_extractor,
+        fact_extractor=fact_extractor,
+        link_generator=link_generator,
+    )
+
+    # Initialize memory interface (4 parameters only)
     memory_interface = MemoryInterface(
         working=working,
         semantic=semantic,
         episodic=episodic,
         curator=curator,
-        entity_extractor=entity_extractor,
-        fact_extractor=fact_extractor,
-        link_generator=link_generator,
     )
 
     # Initialize agent
@@ -131,11 +138,24 @@ async def initialize_system(
     )
     agent = HTMAAgent(llm=llm, memory=memory_interface, config=agent_config)
 
-    # Initialize consolidation engine
+    # Initialize abstraction and pattern components
+    abstraction_generator = AbstractionGenerator(
+        llm=llm,
+        model=curator_model,
+        episodic=episodic,
+    )
+    pattern_detector = PatternDetector(
+        llm=llm,
+        model=curator_model,
+    )
+
+    # Initialize consolidation engine with all required components
     consolidation_engine = ConsolidationEngine(
         curator=curator,
         semantic=semantic,
         episodic=episodic,
+        abstraction_generator=abstraction_generator,
+        pattern_detector=pattern_detector,
     )
 
     return agent, memory_interface, consolidation_engine, llm

@@ -159,10 +159,27 @@ def sample_links(sample_episodes):
 class TestConsolidationEngineInit:
     """Test ConsolidationEngine initialization."""
 
-    def test_init(self, episodic_memory):
+    def test_init(
+        self,
+        mock_curator,
+        mock_semantic,
+        episodic_memory,
+        mock_abstraction_generator,
+        mock_pattern_detector,
+    ):
         """Test basic initialization."""
-        engine = ConsolidationEngine(episodic=episodic_memory)
+        engine = ConsolidationEngine(
+            curator=mock_curator,
+            semantic=mock_semantic,
+            episodic=episodic_memory,
+            abstraction_generator=mock_abstraction_generator,
+            pattern_detector=mock_pattern_detector,
+        )
         assert engine.episodic == episodic_memory
+        assert engine.curator == mock_curator
+        assert engine.semantic == mock_semantic
+        assert engine.abstraction_generator == mock_abstraction_generator
+        assert engine.pattern_detector == mock_pattern_detector
 
 
 class TestStrengthenCoaccessed:
