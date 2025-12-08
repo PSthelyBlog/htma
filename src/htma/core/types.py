@@ -286,3 +286,28 @@ class ExtractedFact(BaseModel):
     )
     source_text: str = Field(default="", description="Source text snippet")
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class LinkEvaluation(BaseModel):
+    """Result of evaluating a potential link between two episodes.
+
+    Represents the LLM's assessment of whether two episodes should be linked
+    and the nature of their connection.
+
+    Attributes:
+        should_link: Whether the two episodes should be linked.
+        link_type: Type of link (semantic, temporal, causal, analogical).
+        weight: Strength of the connection (0.0-1.0).
+        reasoning: Explanation of why the episodes should or shouldn't be linked.
+        metadata: Additional metadata about the evaluation.
+    """
+
+    should_link: bool = Field(description="Whether episodes should be linked")
+    link_type: str = Field(
+        description="Link type: semantic, temporal, causal, or analogical"
+    )
+    weight: float = Field(
+        default=1.0, ge=0.0, le=1.0, description="Connection strength"
+    )
+    reasoning: str = Field(description="Explanation of the link assessment")
+    metadata: dict[str, Any] = Field(default_factory=dict)
