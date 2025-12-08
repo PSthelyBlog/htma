@@ -67,6 +67,46 @@ ollama pull nomic-embed-text
 
 ## Quick Start
 
+### Interactive CLI
+
+The easiest way to try HTMA is through the command-line interface:
+
+```bash
+# Start an interactive chat session
+htma chat
+
+# Query memory directly
+htma query "what are my interests?"
+
+# View memory statistics
+htma status
+
+# Run consolidation
+htma consolidate
+
+# Export memory to JSON
+htma export --output my_memory.json
+```
+
+See [CLI_README.md](CLI_README.md) for complete CLI documentation.
+
+### Guided Demo
+
+Run the interactive demo to see HTMA capabilities:
+
+```bash
+python scripts/demo.py
+```
+
+The demo showcases:
+- Memory-augmented conversations
+- Fact storage and retrieval
+- Temporal reasoning
+- Pattern detection
+- Memory consolidation
+
+### Programmatic Usage
+
 ```python
 from htma import HTMAAgent
 
@@ -155,18 +195,22 @@ export HTMA_CONSOLIDATION_INTERVAL="24h"
 
 ## Status
 
-**Current Phase**: Foundation (Phase 1)
+**Current Phase**: Integration & Demo (Phase 5)
 
-- [x] Project setup
-- [ ] Core types and data models
-- [ ] Storage layer (SQLite + ChromaDB)
-- [ ] LLM client wrapper
-- [ ] Memory stores implementation
-- [ ] Curator operations
-- [ ] Consolidation engine
-- [ ] Agent integration
+- [x] Project setup (Issue #1)
+- [x] Core types and data models (Issue #2)
+- [x] Storage layer - SQLite + ChromaDB (Issues #3, #4)
+- [x] LLM client wrapper (Issue #5)
+- [x] Memory stores implementation (Issues #6, #7, #8, #9)
+- [x] Curator operations (Issues #10, #11, #12, #13, #14)
+- [x] Consolidation engine (Issues #15, #16, #17, #18)
+- [x] Agent integration (Issue #19)
+- [x] End-to-end testing (Issue #20)
+- [x] Interactive demo CLI (Issue #21)
 
-See [GitHub Issues](https://github.com/yourusername/htma/issues) for detailed progress.
+**MVP Complete!** All core features implemented and tested.
+
+See [GitHub Issues](https://github.com/PSthelyBlog/htma/issues) for detailed progress.
 
 ## Contributing
 
