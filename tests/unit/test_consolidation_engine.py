@@ -1,13 +1,19 @@
-"""Unit tests for ConsolidationEngine link maintenance."""
+"""Unit tests for ConsolidationEngine link maintenance and full cycle."""
 
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from htma.consolidation.engine import ConsolidationEngine
+from htma.consolidation.engine import ConsolidationConfig, ConsolidationEngine
 from htma.core.exceptions import ConsolidationError, DatabaseError
-from htma.core.types import Episode, EpisodeLink, LinkMaintenanceReport
+from htma.core.types import (
+    ConsolidationReport,
+    Episode,
+    EpisodeLink,
+    LinkMaintenanceReport,
+    PruneReport,
+)
 from htma.core.utils import generate_episode_id, generate_link_id, utc_now
 from htma.memory.episodic import EpisodicMemory
 
@@ -36,9 +42,55 @@ def episodic_memory(mock_sqlite, mock_chroma):
 
 
 @pytest.fixture
-def consolidation_engine(episodic_memory):
+def mock_curator():
+    """Create a mock MemoryCurator."""
+    curator = MagicMock()
+    curator.resolve_conflict = AsyncMock()
+    return curator
+
+
+@pytest.fixture
+def mock_semantic():
+    """Create a mock SemanticMemory."""
+    semantic = MagicMock()
+    return semantic
+
+
+@pytest.fixture
+def mock_abstraction_generator():
+    """Create a mock AbstractionGenerator."""
+    generator = MagicMock()
+    generator.cluster_episodes = AsyncMock(return_value=[])
+    generator.generate_abstraction = AsyncMock()
+    return generator
+
+
+@pytest.fixture
+def mock_pattern_detector():
+    """Create a mock PatternDetector."""
+    from htma.core.types import PatternDetectionResult
+
+    detector = MagicMock()
+    detector.detect_patterns = AsyncMock(return_value=PatternDetectionResult())
+    return detector
+
+
+@pytest.fixture
+def consolidation_engine(
+    mock_curator,
+    mock_semantic,
+    episodic_memory,
+    mock_abstraction_generator,
+    mock_pattern_detector,
+):
     """Create a ConsolidationEngine instance."""
-    return ConsolidationEngine(episodic=episodic_memory)
+    return ConsolidationEngine(
+        curator=mock_curator,
+        semantic=mock_semantic,
+        episodic=episodic_memory,
+        abstraction_generator=mock_abstraction_generator,
+        pattern_detector=mock_pattern_detector,
+    )
 
 
 @pytest.fixture
