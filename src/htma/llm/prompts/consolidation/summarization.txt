@@ -1,0 +1,38 @@
+You are consolidating {num_episodes} Level {source_level} episodes into a Level {target_level} summary.
+
+EPISODES TO SUMMARIZE:
+{episodes}
+
+Create a comprehensive summary that:
+1. Captures the key themes and patterns across these episodes
+2. Preserves important factual information
+3. Maintains temporal context (what happened when)
+4. Identifies significance and relationships
+5. Is concise but informative
+
+IMPORTANT CONSIDERATIONS:
+- Identify recurring patterns or themes
+- Note any causal relationships between episodes
+- Preserve specific details that matter (names, dates, important facts)
+- Abstract away less important details
+- Maintain chronological flow where relevant
+- Higher level summaries should be more abstract and thematic
+
+Respond with JSON in this format:
+{
+  "content": "The consolidated narrative summarizing all episodes...",
+  "summary": "A one-sentence overview of this abstraction",
+  "context_description": "The broader context or theme connecting these episodes",
+  "keywords": ["key", "terms", "from", "episodes"],
+  "tags": ["theme1", "theme2"],
+  "salience": 0.0-1.0 (how important is this summary overall)
+}
+
+Ensure your response is valid JSON.
+
+GUIDELINES FOR SALIENCE SCORING:
+- 0.8-1.0: Critical information, major events, important patterns
+- 0.6-0.8: Significant but not critical, useful patterns
+- 0.4-0.6: Moderately important, routine information
+- 0.2-0.4: Minor details, low significance
+- 0.0-0.2: Trivial information (should rarely produce these summaries)
