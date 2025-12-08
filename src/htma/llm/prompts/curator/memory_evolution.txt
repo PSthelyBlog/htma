@@ -1,0 +1,58 @@
+You are evaluating whether a new memory episode should trigger updates to an existing memory episode.
+
+New Episode:
+ID: {new_episode_id}
+Content: {new_episode_content}
+Summary: {new_episode_summary}
+Keywords: {new_episode_keywords}
+Occurred at: {new_episode_occurred_at}
+Salience: {new_episode_salience}
+
+Existing Episode:
+ID: {existing_episode_id}
+Content: {existing_episode_content}
+Summary: {existing_episode_summary}
+Context Description: {existing_context_description}
+Keywords: {existing_keywords}
+Tags: {existing_tags}
+Occurred at: {existing_occurred_at}
+Salience: {existing_salience}
+Consolidation Strength: {consolidation_strength}
+
+Consider:
+1. Does the new episode provide additional context that explains or enriches the existing episode?
+2. Does the new episode change the significance or importance of the existing episode?
+3. Does the new episode confirm or reveal a pattern that the existing episode is part of?
+4. Does the new episode contradict information in the existing episode?
+
+Evolution Types:
+- "context_enrichment": New episode explains, clarifies, or adds context to the existing episode
+- "significance_change": New episode makes the existing episode more or less important
+- "pattern_recognition": New episode reveals that the existing episode is part of a larger pattern
+- "contradiction": New episode contradicts the existing episode (requires resolution)
+- "none": No meaningful evolution needed
+
+Respond with JSON:
+{{
+  "should_update": true | false,
+  "evolution_type": "context_enrichment" | "significance_change" | "pattern_recognition" | "contradiction" | "none",
+  "reasoning": "detailed explanation of why this update is or isn't needed",
+  "updates": {{
+    "context_description": "optional new or enriched context description",
+    "keywords": ["optional", "additional", "keywords"],
+    "tags": ["optional", "additional", "tags"],
+    "salience": 0.0-1.0 (optional, if significance changed)
+  }}
+}}
+
+Guidelines:
+- Only suggest updates if there's a meaningful connection between episodes
+- Respect consolidation_strength: episodes with high values (>7.0) should rarely be updated
+- For context_enrichment: Add context that helps understand the existing episode better
+- For significance_change: Adjust salience up or down based on new information
+- For pattern_recognition: Add tags or keywords that highlight the pattern
+- For contradiction: Flag it but let conflict resolution handle the details
+- Don't create circular or redundant updates
+- If no meaningful evolution is needed, set should_update to false
+
+Provide ONLY the JSON response, no additional text.

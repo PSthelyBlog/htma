@@ -19,6 +19,7 @@ from htma.core.types import (
     ConflictResolution,
     Entity,
     Episode,
+    EpisodeUpdate,
     Fact,
     FactConflict,
     Interaction,
@@ -483,23 +484,239 @@ class MemoryCurator:
                 new_fact.id, [f.id for f in existing_facts]
             ) from e
 
-    async def trigger_evolution(
-        self, new_episode: Episode, related_episodes: list[Episode]
-    ) -> list[dict[str, Any]]:
-        """Trigger evolution of existing memories based on new episode.
+    async def evaluate_evolution(
+        self, new_episode: Episode, existing_episode: Episode
+    ) -> EpisodeUpdate | None:
+        """Evaluate if a new episode should trigger updates to an existing episode.
+
+        This method uses the LLM to determine if the new episode provides context for,
+        changes the significance of, or contradicts the existing episode.
 
         Args:
             new_episode: The new episode that may trigger updates.
-            related_episodes: Related episodes that may be updated.
+            existing_episode: The existing episode to potentially update.
 
         Returns:
-            List of update dictionaries for existing episodes.
+            EpisodeUpdate if an update is needed, None otherwise.
+
+        Raises:
+            LLMResponseError: If LLM fails to return valid JSON or returns invalid data.
 
         Note:
-            This is a stub implementation. Full implementation in Issue #14.
-            Currently returns an empty list.
+            Evolution types:
+            - context_enrichment: New info explains or contextualizes old
+            - significance_change: New events change importance of old
+            - pattern_recognition: New episode confirms pattern from old
+            - contradiction: New episode contradicts old (trigger resolution)
         """
-        logger.debug("Triggering evolution (stub implementation)")
-        # Stub: Return empty list
-        # Full implementation will use LLM to evaluate evolution opportunities
-        return []
+        logger.debug(
+            f"Evaluating evolution: new={new_episode.id}, existing={existing_episode.id}"
+        )
+
+        # Load and format prompt
+        try:
+            prompt_template = self._load_prompt_template("memory_evolution.txt")
+
+            prompt = prompt_template.format(
+                new_episode_id=new_episode.id,
+                new_episode_content=new_episode.content[:1000],  # Truncate long content
+                new_episode_summary=new_episode.summary or "N/A",
+                new_episode_keywords=", ".join(new_episode.keywords) or "None",
+                new_episode_occurred_at=new_episode.occurred_at.isoformat(),
+                new_episode_salience=new_episode.salience,
+                existing_episode_id=existing_episode.id,
+                existing_episode_content=existing_episode.content[:1000],
+                existing_episode_summary=existing_episode.summary or "N/A",
+                existing_context_description=existing_episode.context_description or "N/A",
+                existing_keywords=", ".join(existing_episode.keywords) or "None",
+                existing_tags=", ".join(existing_episode.tags) or "None",
+                existing_occurred_at=existing_episode.occurred_at.isoformat(),
+                existing_salience=existing_episode.salience,
+                consolidation_strength=existing_episode.consolidation_strength,
+            )
+        except Exception as e:
+            logger.error(f"Failed to load/format evolution prompt: {e}")
+            raise LLMResponseError(f"Failed to load evolution prompt: {e}") from e
+
+        # Get LLM evaluation
+        try:
+            response = await self.llm.generate(
+                model=self.model,
+                prompt=prompt,
+                temperature=0.3,  # Lower temperature for consistent evaluation
+                max_tokens=800,
+            )
+        except Exception as e:
+            logger.error(f"LLM generation failed during evolution evaluation: {e}")
+            raise LLMResponseError(
+                f"Failed to generate evolution evaluation: {e}"
+            ) from e
+
+        # Parse JSON response
+        try:
+            # Extract JSON from response
+            response = response.strip()
+            start_idx = response.find("{")
+            end_idx = response.rfind("}") + 1
+
+            if start_idx == -1 or end_idx == 0:
+                raise ValueError("No JSON object found in response")
+
+            json_str = response[start_idx:end_idx]
+            data = json.loads(json_str)
+
+            # Validate required fields
+            required_fields = ["should_update", "evolution_type", "reasoning"]
+            if not all(key in data for key in required_fields):
+                raise ValueError(f"Missing required fields in response: {required_fields}")
+
+            # If no update needed, return None
+            if not data["should_update"] or data["evolution_type"] == "none":
+                logger.debug(f"No evolution needed: {data['reasoning'][:100]}")
+                return None
+
+            # Validate evolution type
+            valid_types = [
+                "context_enrichment",
+                "significance_change",
+                "pattern_recognition",
+                "contradiction",
+            ]
+            evolution_type = data["evolution_type"]
+            if evolution_type not in valid_types:
+                raise ValueError(
+                    f"Invalid evolution_type '{evolution_type}'. Must be one of {valid_types}"
+                )
+
+            # Build updates dictionary
+            updates = data.get("updates", {})
+
+            # Validate and process updates
+            processed_updates = {}
+            if "context_description" in updates and updates["context_description"]:
+                # Enrich existing context if present, otherwise set new
+                if existing_episode.context_description:
+                    processed_updates["context_description"] = (
+                        f"{existing_episode.context_description} "
+                        f"{updates['context_description']}"
+                    )
+                else:
+                    processed_updates["context_description"] = updates["context_description"]
+
+            if "keywords" in updates and updates["keywords"]:
+                # Merge with existing keywords, avoiding duplicates
+                new_keywords = set(existing_episode.keywords + updates["keywords"])
+                processed_updates["keywords"] = list(new_keywords)
+
+            if "tags" in updates and updates["tags"]:
+                # Merge with existing tags, avoiding duplicates
+                new_tags = set(existing_episode.tags + updates["tags"])
+                processed_updates["tags"] = list(new_tags)
+
+            if "salience" in updates:
+                salience = float(updates["salience"])
+                if 0.0 <= salience <= 1.0:
+                    processed_updates["salience"] = salience
+                else:
+                    logger.warning(f"Invalid salience {salience}, ignoring")
+
+            # Create EpisodeUpdate
+            episode_update = EpisodeUpdate(
+                episode_id=existing_episode.id,
+                evolution_type=evolution_type,
+                updates=processed_updates,
+                reasoning=data["reasoning"],
+                triggered_by=new_episode.id,
+                metadata={"llm_response": data},
+            )
+
+            logger.info(
+                f"Evolution identified: {evolution_type} for episode {existing_episode.id}, "
+                f"{len(processed_updates)} updates"
+            )
+            return episode_update
+
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            logger.error(
+                f"Failed to parse evolution evaluation response: {e}\nResponse: {response}"
+            )
+            raise LLMResponseError(
+                f"LLM returned invalid evolution response: {e}\n"
+                f"Response: {response[:200]}"
+            ) from e
+        except Exception as e:
+            logger.error(f"Unexpected error during evolution evaluation: {e}")
+            raise LLMResponseError(f"Failed to evaluate evolution: {e}") from e
+
+    async def trigger_evolution(
+        self, new_episode: Episode, related_episodes: list[Episode]
+    ) -> list[EpisodeUpdate]:
+        """Trigger evolution of existing memories based on new episode.
+
+        This method evaluates whether a new episode should trigger updates to
+        related existing episodes. It uses the LLM to check for context enrichment,
+        significance changes, pattern recognition, or contradictions.
+
+        Args:
+            new_episode: The new episode that may trigger updates.
+            related_episodes: Related episodes that may be updated (e.g., from semantic search).
+
+        Returns:
+            List of EpisodeUpdate objects for existing episodes that should be updated.
+
+        Raises:
+            LLMResponseError: If LLM evaluation fails.
+
+        Note:
+            - Evaluates each related episode independently
+            - Respects consolidation_strength (high values are less likely to be updated)
+            - Doesn't create circular updates
+            - May trigger conflict resolution for contradictions
+        """
+        logger.debug(
+            f"Triggering evolution for new episode {new_episode.id} "
+            f"against {len(related_episodes)} related episodes"
+        )
+
+        if not related_episodes:
+            logger.debug("No related episodes to evaluate for evolution")
+            return []
+
+        updates: list[EpisodeUpdate] = []
+
+        # Evaluate each related episode
+        for existing_episode in related_episodes:
+            # Don't evaluate against self (shouldn't happen, but safety check)
+            if existing_episode.id == new_episode.id:
+                continue
+
+            # Skip episodes with very high consolidation strength (strongly resistant to change)
+            if existing_episode.consolidation_strength > 9.0:
+                logger.debug(
+                    f"Skipping episode {existing_episode.id} due to high "
+                    f"consolidation_strength ({existing_episode.consolidation_strength})"
+                )
+                continue
+
+            try:
+                # Evaluate if this episode should be updated
+                update = await self.evaluate_evolution(new_episode, existing_episode)
+
+                if update:
+                    updates.append(update)
+                    logger.debug(
+                        f"Evolution update created: {update.evolution_type} for {update.episode_id}"
+                    )
+
+            except LLMResponseError as e:
+                # Log error but continue with other episodes
+                logger.warning(
+                    f"Failed to evaluate evolution for episode {existing_episode.id}: {e}"
+                )
+                continue
+
+        logger.info(
+            f"Evolution evaluation complete: {len(updates)} updates identified "
+            f"from {len(related_episodes)} candidates"
+        )
+        return updates
