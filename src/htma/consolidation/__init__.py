@@ -8,5 +8,6 @@ This module provides background processes that evolve memory through:
 """
 
 from htma.consolidation.abstraction import AbstractionGenerator
+from htma.consolidation.engine import ConsolidationEngine
 
-__all__ = ["AbstractionGenerator"]
+__all__ = ["AbstractionGenerator", "ConsolidationEngine"]

@@ -486,3 +486,36 @@ class PatternDetectionResult(BaseModel):
         description="(pattern_id, new_confidence) for weakened patterns",
     )
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# Consolidation Types
+class LinkMaintenanceReport(BaseModel):
+    """Result of link maintenance operations during consolidation.
+
+    Contains statistics about link strengthening, decay, and pruning operations.
+
+    Attributes:
+        links_strengthened: Number of links strengthened due to co-access.
+        links_decayed: Number of links that decayed due to lack of use.
+        links_pruned: Number of weak links removed from the graph.
+        total_links_before: Total number of links before maintenance.
+        total_links_after: Total number of links after maintenance.
+        processing_time: Time taken for maintenance operations (in seconds).
+        metadata: Additional metadata about the maintenance cycle.
+    """
+
+    links_strengthened: int = Field(
+        default=0, ge=0, description="Links strengthened via co-access"
+    )
+    links_decayed: int = Field(default=0, ge=0, description="Links that decayed")
+    links_pruned: int = Field(default=0, ge=0, description="Weak links removed")
+    total_links_before: int = Field(
+        default=0, ge=0, description="Total links before maintenance"
+    )
+    total_links_after: int = Field(
+        default=0, ge=0, description="Total links after maintenance"
+    )
+    processing_time: float = Field(
+        default=0.0, ge=0.0, description="Processing time in seconds"
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
