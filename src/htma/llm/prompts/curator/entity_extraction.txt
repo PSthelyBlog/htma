@@ -1,0 +1,43 @@
+You are extracting entities from text to populate a knowledge graph.
+
+Context (if relevant):
+{context}
+
+Text to analyze:
+{text}
+
+Extract all significant entities from the text. For each entity, identify:
+1. name: The entity's name or identifier
+2. type: One of: person, place, organization, concept, object, event, time
+3. mentions: List of text snippets where the entity appears (optional)
+4. confidence: How confident you are in this extraction (0.0-1.0)
+
+Entity type guidelines:
+- person: Individual people, characters, historical figures
+- place: Locations, venues, cities, countries, addresses
+- organization: Companies, groups, institutions, teams
+- concept: Abstract ideas, topics, subjects, theories
+- object: Physical items, products, tools, artifacts
+- event: Occurrences, meetings, activities, incidents
+- time: Temporal references (dates, times, periods, eras)
+
+Important rules:
+- Only extract entities that are actually mentioned in the text
+- Don't infer entities not directly stated
+- Use the exact form of the name as it appears in the text
+- For ambiguous cases, prefer higher confidence for explicit mentions
+- If an entity could be multiple types, choose the most specific type
+
+Respond with a JSON array of entities:
+[
+  {{
+    "name": "entity name",
+    "type": "entity_type",
+    "mentions": ["snippet where it appears"],
+    "confidence": 0.0-1.0
+  }}
+]
+
+If no entities are found, return an empty array: []
+
+Provide ONLY the JSON response, no additional text.
